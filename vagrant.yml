@@ -1,0 +1,39 @@
+---
+
+configs:
+
+  k8s_node_count: 2
+
+  use: 'test'
+
+  test:
+    vb:
+      ip_range: 192.168.7
+      ip_netmask: 255.255.255.0
+    controller:
+      name: "controller"
+      vb:
+        external_network: "private_network"
+        external_ip_base: 100
+        box: "debian/buster64"
+        resources:
+          cpus: 1
+          memory: 512
+    k8s_master:
+      name: "k8s-master"
+      vb:
+        external_network: "private_network"
+        external_ip_base: 2
+        box: "geerlingguy/debian10"
+        resources:
+          cpus: 2
+          memory: 2048
+    k8s_node:
+      name: "k8s-node"
+      vb:
+        external_network: "private_network"
+        external_ip_base: 3
+        box: "geerlingguy/debian10"
+        resources:
+          cpus: 2
+          memory: 2048

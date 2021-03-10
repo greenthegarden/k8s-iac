@@ -1,0 +1,5 @@
+# ignore all vagrant managed files
+.vagrant/
+
+# ignore all log files
+*.log

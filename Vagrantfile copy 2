@@ -1,0 +1,280 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Specify minimum Vagrant version and Vagrant API version
+Vagrant.require_version '>= 1.6.0'
+VAGRANTFILE_API_VERSION = '2'
+
+# Require the YAML module and Azure provider plugin 
+require 'yaml'
+
+# Load settings from vagrant.yml or vagrant.yml.dist
+current_dir = File.dirname(File.expand_path(__FILE__))
+if File.file?("#{current_dir}/vagrant.yml")
+  config_file = YAML.load_file("#{current_dir}/vagrant.yml")
+elsif
+  config_file = YAML.load_file("#{current_dir}/vagrant.yml.dist")
+else
+  exit(1)
+end
+
+# Get settings from configuration file to enable easier access
+controller_settings = config_file['configs'][config_file['configs']['use']]['controller']
+k8s_master_settings = config_file['configs'][config_file['configs']['use']]['k8s_master']
+k8s_node_settings = config_file['configs'][config_file['configs']['use']]['k8s_node']
+vb_settings = config_file['configs'][config_file['configs']['use']]['vb']
+k8s_node_count = config_file['configs']['k8s_node_count']
+
+# Define references which do not change with names
+controller_node_base = "controller-node"
+k8s_master_base = "k8s-master"
+k8s_node_base = "k8s-node"
+
+puts "Using configurations for #{config_file['configs']['use']}"
+puts "controller_settings: #{controller_settings}"
+puts "k8s_master_settings: #{k8s_master_settings}"
+puts "k8s_node_settings: #{k8s_node_settings}"
+puts "k8s_node_count: #{k8s_node_count}"
+
+# Define scripts
+def generate_node_ip(vb_settings, id)
+  node_ip_range = vb_settings['ip_range']
+  node_ip_id = Integer(id)
+  # puts "node_ip_range: #{node_ip_range}, node_ip_id: #{node_ip_id}" 
+  node_ip = [ node_ip_range, node_ip_id ].join('.')
+end
+
+# Create and configure the specified systems
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+
+  # Specify provider order preference
+  # For details see https://www.vagrantup.com/docs/providers/basic_usage.html#default-provider
+  config.vm.provider "virtualbox"
+
+  # use local ssh key to connect to remote vagrant box
+  # if not Vagrant::Util::Platform.windows? then
+  #   config.ssh.private_key_path = './ssh_keys/id_rsa'
+  # end
+  
+  # Set virtualbox provider specific attributes
+  config.vm.provider :virtualbox do |v|
+    v.linked_clone = true
+    v.customize ['modifyvm', :id, '--audio', 'none']
+    v.check_guest_additions = false
+    v.gui = false
+  end
+
+  # config.ssh.insert_key = false
+  # config.vm.synced_folder '.', '/vagrant', disabled: true
+
+  # Create k8s master
+  k8s_master_name = k8s_master_settings['name']
+  puts "K8s master name set to #{k8s_master_name}"
+
+  k8s_master_machine = k8s_master_base
+
+  config.vm.define k8s_master_machine do |k8s_master|
+
+    # Specify the hostname of the machine
+    k8s_master.vm.hostname = k8s_master_name
+
+    # Disable default shared folder
+    k8s_master.vm.synced_folder '.', '/vagrant', disabled: true
+
+    # Set node specific VirtualBox configuration/overrides
+    k8s_master.vm.provider "virtualbox" do |vb, override|
+
+      k8s_master.vm.box = k8s_master_settings['vb']['box']
+
+      # k8s_master_ip_base = Integer(k8s_master_settings['vb']['external_ip_base'])
+      # k8s_master_ip = generate_node_ip(vb_settings, k8s_master_ip_base)
+      # puts "Services node IP address set to #{k8s_master_ip}"
+    
+      k8s_master.vm.network :private_network, ip: '192.168.7.2'
+
+      vb.name = k8s_master_name
+      vb.cpus = k8s_master_settings['vb']['resources']['cpus']
+      vb.memory = k8s_master_settings['vb']['resources']['memory']
+      # vb.customize ["modifyvm", :id, "--ioapic", "on"]
+      # Enable NAT hosts DNS resolver
+      # vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+      # vb.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
+    
+    end
+
+    # Configure ssh access on VM
+    public_key = File.read("ssh_keys/id_rsa.pub")
+    k8s_master.vm.provision :shell, :inline =>"
+      echo 'Copying ansible-vm public SSH Keys to the VM'
+      mkdir -p /home/vagrant/.ssh
+      chmod 700 /home/vagrant/.ssh
+      echo '#{public_key}' >> /home/vagrant/.ssh/authorized_keys
+      chmod -R 600 /home/vagrant/.ssh/authorized_keys
+      echo 'Host *' >> /home/vagrant/.ssh/config
+      echo 'StrictHostKeyChecking no' >> /home/vagrant/.ssh/config
+      echo 'UserKnownHostsFile /dev/null' >> /home/vagrant/.ssh/config
+      chmod -R 600 /home/vagrant/.ssh/config
+      ", privileged: false
+
+    k8s_master.vm.post_up_message = "k8s master spun up!"
+  
+  end
+
+  # # Create k8s nodes
+  # (1..k8s_node_count).each do |i|
+
+  #   k8s_node_name = k8s_node_settings['name'] + "-" + String(i)
+  #   puts "Services node name set to %s" % k8s_node_name
+
+  #   k8s_node_machine = k8s_node_base + "-" + String(i)
+
+  #   config.vm.define k8s_node_machine do |k8s_node|
+
+  #     # Specify the hostname of the machine
+  #     k8s_node.vm.hostname = k8s_node_name
+
+  #     # # Disable default shared folder
+  #     # k8s_node.vm.synced_folder '.', '/vagrant', disabled: true
+
+  #     # Set node specific VirtualBox configuration/overrides
+  #     k8s_node.vm.provider "virtualbox" do |vb, override|
+
+  #       k8s_node.vm.box = k8s_node_settings['vb']['box']
+
+  #       k8s_node_ip_base = Integer(k8s_node_settings['vb']['external_ip_base']) + (i-1)
+  #       k8s_node_ip = generate_node_ip(vb_settings, k8s_node_ip_base)
+  #       # puts "Services node IP address set to %s" % k8s_node_ip
+      
+  #       k8s_node.vm.network :private_network, ip: k8s_node_ip#, netmask: base_settings["external_netmask"]
+
+  #       vb.name = k8s_node_name
+  #       vb.cpus = k8s_node_settings['vb']['resources']['cpus']
+  #       vb.memory = k8s_node_settings['vb']['resources']['memory']
+  #       # vb.customize ["modifyvm", :id, "--ioapic", "on"]
+  #       # Enable NAT hosts DNS resolver
+  #       # vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+  #       # vb.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
+      
+  #     end
+
+  #     # Configure ssh access on VM
+  #     public_key = File.read("ssh_keys/id_rsa.pub")
+  #     k8s_node.vm.provision :shell, :inline =>"
+  #       echo 'Copying ansible-vm public SSH Keys to the VM'
+  #       mkdir -p /home/vagrant/.ssh
+  #       chmod 700 /home/vagrant/.ssh
+  #       echo '#{public_key}' >> /home/vagrant/.ssh/authorized_keys
+  #       chmod -R 600 /home/vagrant/.ssh/authorized_keys
+  #       echo 'Host *' >> /home/vagrant/.ssh/config
+  #       echo 'StrictHostKeyChecking no' >> /home/vagrant/.ssh/config
+  #       echo 'UserKnownHostsFile /dev/null' >> /home/vagrant/.ssh/config
+  #       chmod -R 600 /home/vagrant/.ssh/config
+  #       ", privileged: false
+
+  #     k8s_node.vm.post_up_message = "Service node spun up!"
+
+  #   end
+
+  # end
+
+  # # # Define three VMs with static private IP addresses.
+  # # boxes = [
+  # #   { :name => "kube1", :ip => "192.168.7.20" },
+  # #   { :name => "kube2", :ip => "192.168.7.30" },
+  # #   { :name => "kube3", :ip => "192.168.7.31" }
+  # # ]
+
+  # # # Configure each of the VMs.
+  # # boxes.each_with_index do |opts, index|
+  # #   config.vm.define opts[:name] do |config|
+  # #     config.vm.hostname = opts[:name] + ".cluster.test"
+  # #     config.vm.network :private_network, ip: opts[:ip]
+  # #     config.vm.box = "geerlingguy/debian10"
+
+  # #     # Configure ssh access on VM
+  # #     public_key = File.read("ssh_keys/id_rsa.pub")
+  # #     config.vm.provision :shell, :inline =>"
+  # #       echo 'Copying ansible-vm public SSH Keys to the VM'
+  # #       mkdir -p /home/vagrant/.ssh
+  # #       chmod 700 /home/vagrant/.ssh
+  # #       echo '#{public_key}' >> /home/vagrant/.ssh/authorized_keys
+  # #       chmod -R 600 /home/vagrant/.ssh/authorized_keys
+  # #       echo 'Host *' >> /home/vagrant/.ssh/config
+  # #       echo 'StrictHostKeyChecking no' >> /home/vagrant/.ssh/config
+  # #       echo 'UserKnownHostsFile /dev/null' >> /home/vagrant/.ssh/config
+  # #       chmod -R 600 /home/vagrant/.ssh/config
+  # #       ", privileged: false
+
+  # #   end
+
+  # # end
+
+  # # k8s_node.vm.post_up_message = "Service node spun up!"
+
+  # Create a machine to run Ansible
+
+  controller_node_machine = controller_node_base
+
+  config.vm.define controller_node_machine do |controller_node|
+
+    controller_node_name = controller_settings['name']
+
+    # Specify the hostname of the machine
+    controller_node.vm.hostname = controller_node_name
+
+    # Sync ansible folder to remote
+    controller_node.vm.synced_folder "./ansible", "/vagrant/ansible", type: "rsync",
+      rsync__exclude: [".git/"],
+      rsync__args: ["--verbose", "--rsync-path='sudo rsync'", "--archive", "--delete", "-z"]
+  
+    # Set node specific VirtualBox configuration/overrides
+    controller_node.vm.provider "virtualbox" do |vb|
+
+      controller_node.vm.box = controller_settings['vb']['box']
+
+      controller_node_ip_base = Integer(controller_settings['vb']['external_ip_base'])
+      controller_node_ip = generate_node_ip(vb_settings, controller_node_ip_base)
+      # puts "Controller node IP address set to %s" % controller_node_ip
+
+      controller_node.vm.network :private_network, ip: controller_node_ip#, netmask: base_settings["external_netmask"]
+
+      vb.name = controller_node_name
+      vb.memory = controller_settings['vb']['resources']['memory']
+      vb.cpus = controller_settings['vb']['resources']['cpus']
+      vb.linked_clone = true
+      # vb.customize ["modifyvm", :id, "--ioapic", "on"]
+      # Enable NAT hosts DNS resolver
+      # vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+      # vb.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
+    
+    end
+
+    # Copy private ssh key to controller
+    controller_node.vm.provision "file", source: "ssh_keys/id_rsa", destination: "/home/vagrant/.ssh/id_rsa"
+
+    # Install Ansible on contoller_node and provision services
+    controller_node.vm.provision :ansible_local do |ansible|
+
+      ansible.install_mode = "pip"
+      # Ensure pip is installed for Python3
+      ansible.pip_install_cmd = "sudo apt install -y python3-distutils && curl https://bootstrap.pypa.io/get-pip.py | sudo python3"
+      ansible.version = "2.10.6"
+      ansible.compatibility_mode = "2.0"
+      ansible.install = true
+      ansible.limit = "all"
+      ansible.verbose = "v"
+
+      ansible.config_file = "ansible/ansible.cfg"
+      ansible.inventory_path = "ansible/hosts.yml"
+      ansible.playbook = "ansible/site.yml"
+
+      ansible.galaxy_role_file = "ansible/requirements.yml"
+      ansible.galaxy_roles_path = "ansible/roles"
+
+    end
+
+    controller_node.vm.post_up_message = "Controller node spun up!"
+
+  end
+
+end
