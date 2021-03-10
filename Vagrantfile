@@ -5,6 +5,27 @@
 Vagrant.require_version '>= 1.6.0'
 VAGRANTFILE_API_VERSION = '2'
 
+# Require the YAML module and Azure provider plugin 
+require 'yaml'
+
+# Load settings from vagrant.yml or vagrant.yml.dist
+current_dir = File.dirname(File.expand_path(__FILE__))
+if File.file?("#{current_dir}/vagrant.yml")
+  config_file = YAML.load_file("#{current_dir}/vagrant.yml")
+elsif
+  config_file = YAML.load_file("#{current_dir}/vagrant.yml.dist")
+else
+  exit(1)
+end
+
+# Get settings from configuration file to enable easier access
+config_use = config_file['configs']['use']
+controller_settings = config_file['configs'][config_file['configs']['use']]['controller']
+vb_settings = config_file['configs'][config_file['configs']['use']]['vb']
+
+puts "Using configurations for #{config_use}"
+puts "controller_settings: #{controller_settings}"
+
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
   # Specify provider order preference
@@ -29,25 +50,22 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.vm.define "controller", primary: true do |subconfig|
 
     # Specify the hostname of the machine
-    subconfig.vm.hostname = "controller"
+    subconfig.vm.hostname = controller_settings['name']
 
     # Sync ansible folder to remote
     subconfig.vm.synced_folder "./ansible", "/vagrant/ansible", type: "rsync",
       rsync__exclude: [".git/"],
       rsync__args: ["--verbose", "--rsync-path='sudo rsync'", "--archive", "--delete", "-z"]
   
-    subconfig.vm.box = "debian/buster64"
+    subconfig.vm.box = controller_settings['vb']['box']
 
-    subconfig.vm.network :private_network, ip: "192.168.7.2"
+    subconfig.vm.network :private_network, ip: [ vb_settings['ip_range'], 2 ].join('.')
     
     # Set node specific VirtualBox configuration/overrides
     subconfig.vm.provider "virtualbox" do |vb|
-      vb.check_guest_additions = false
-      vb.gui = false
-      vb.name = "controller"
-      vb.memory = 1024
-      vb.cpus = 1
-      vb.linked_clone = true
+      vb.name = controller_settings['name']
+      vb.cpus = controller_settings['vb']['resources']['cpus']
+      vb.memory = controller_settings['vb']['resources']['memory']
       vb.customize ['modifyvm', :id, '--audio', 'none']
       # vb.customize ["modifyvm", :id, "--ioapic", "on"]
       # Enable NAT hosts DNS resolver
