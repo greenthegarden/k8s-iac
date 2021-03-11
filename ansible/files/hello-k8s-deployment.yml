@@ -1,9 +1,13 @@
 ---
+
 apiVersion: apps/v1
+
 kind: Deployment
+
 metadata:
   name: hello-k8s
   namespace: default
+
 spec:
   replicas: 3
   selector:

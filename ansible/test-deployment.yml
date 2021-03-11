@@ -2,10 +2,26 @@
 - hosts: kube1
   become: true
 
+  vars:
+    ansible_python_interpreter: '{{ ansible_playbook_python }}'
+
   vars_files:
     - vars/main.yml
 
   pre_tasks:
+    - name: Install pip3 dependencies
+      apt:
+        name: python3-distutils
+        state: present
+      
+    - name: Get pip install script
+      get_url:
+        url: https://bootstrap.pypa.io/get-pip.py
+        dest: /tmp/get-pip.py
+        
+    - name: Install pip3
+      command: python3 /tmp/get-pip.py
+    
     - name: Ensure k8s module dependencies are installed.
       pip:
         name: openshift
