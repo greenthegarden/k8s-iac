@@ -22,10 +22,14 @@ end
 config_use = config_file['configs']['use']
 controller_settings = config_file['configs'][config_file['configs']['use']]['controller']
 k8s_master_settings = config_file['configs'][config_file['configs']['use']]['k8s_master']
+k8s_node_settings = config_file['configs'][config_file['configs']['use']]['k8s_node']
 vb_settings = config_file['configs'][config_file['configs']['use']]['vb']
+k8s_node_count = config_file['configs']['k8s_node_count']
 
 puts "Using configurations for #{config_use}"
 puts "k8s_master settings: #{k8s_master_settings}"
+puts "k8s_node settings: #{k8s_node_settings}"
+puts "k8s node count: #{k8s_node_count}"
 puts "controller settings: #{controller_settings}"
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
@@ -47,6 +51,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   end
 
   # Create k8s master
+  
   config.vm.define "k8s_master" do |subconfig|
 
     subconfig.vm.box = k8s_master_settings['vb']['box']
@@ -79,6 +84,47 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       ", privileged: false
 
     subconfig.vm.post_up_message = "k8s master spun up!"
+  
+  end
+
+  # Create k8s nodes
+
+  (1..k8s_node_count).each do |i|
+
+    config.vm.define "k8s_node_#{i}" do |subconfig|
+
+      subconfig.vm.box = k8s_node_settings['vb']['box']
+      subconfig.vm.hostname = [ k8s_node_settings['name'], "#{i}" ].join('-')
+      subconfig.vm.network :private_network, ip: [ vb_settings['ip_range'], "#{Integer(k8s_node_settings['vb']['external_ip_base']) + i}" ].join('.')
+
+      # Set node specific VirtualBox configuration/overrides
+      subconfig.vm.provider "virtualbox" do |vb, override|
+        vb.cpus = k8s_node_settings['vb']['resources']['cpus']
+        vb.memory = k8s_node_settings['vb']['resources']['memory']
+        vb.name = [ k8s_node_settings['name'], "#{i}" ].join('-')
+        # vb.customize ["modifyvm", :id, "--ioapic", "on"]
+        # Enable NAT hosts DNS resolver
+        # vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+        # vb.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
+      end
+
+      # Configure ssh access on VM
+      public_key = File.read("ssh_keys/id_rsa.pub")
+      subconfig.vm.provision :shell, :inline =>"
+        echo 'Copying ansible-vm public SSH Keys to the VM'
+        mkdir -p /home/vagrant/.ssh
+        chmod 700 /home/vagrant/.ssh
+        echo '#{public_key}' >> /home/vagrant/.ssh/authorized_keys
+        chmod -R 600 /home/vagrant/.ssh/authorized_keys
+        echo 'Host *' >> /home/vagrant/.ssh/config
+        echo 'StrictHostKeyChecking no' >> /home/vagrant/.ssh/config
+        echo 'UserKnownHostsFile /dev/null' >> /home/vagrant/.ssh/config
+        chmod -R 600 /home/vagrant/.ssh/config
+        ", privileged: false
+
+      subconfig.vm.post_up_message = "k8s node #{i} spun up!"
+    
+    end
   
   end
 

@@ -74,7 +74,12 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     end
 
     # Copy private ssh key to controller
+    # Private key needs 600 permissions
     subconfig.vm.provision "file", source: "ssh_keys/id_rsa", destination: "/home/vagrant/.ssh/id_rsa"
+    subconfig.vm.provision :shell, :inline =>"
+      echo 'Setting permissions of private key'
+      chmod -R 600 /home/vagrant/.ssh/id_rsa
+      ", privileged: false
 
     # Install Ansible on contoller_node and provision services
     subconfig.vm.provision :ansible_local do |ansible|
