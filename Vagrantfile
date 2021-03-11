@@ -51,7 +51,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   end
 
   # Create k8s master
-  
+
   config.vm.define "k8s_master" do |subconfig|
 
     subconfig.vm.box = k8s_master_settings['vb']['box']
@@ -138,7 +138,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
     # Sync ansible folder to remote
     subconfig.vm.synced_folder "./ansible", "/vagrant/ansible", type: "rsync",
-      rsync__exclude: [".git/"],
+      rsync__exclude: [".git/", ".vagrant/", "ssh_keys/"],
       rsync__args: ["--verbose", "--rsync-path='sudo rsync'", "--archive", "--delete", "-z"]
       
     # Set node specific VirtualBox configuration/overrides

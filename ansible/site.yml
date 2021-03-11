@@ -2,4 +2,4 @@
 # file: site.yml
 
 - import_playbook: helloworld.yml
-# - import_playbook: main.yml
+- import_playbook: main.yml
