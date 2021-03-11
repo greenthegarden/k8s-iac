@@ -22,14 +22,14 @@ configs:
       name: "k8s-master"
       vb:
         external_ip_base: 3
-        box: "debian/buster64"
+        box: "geerlingguy/debian10"
         resources:
           cpus: 2
           memory: 2048
     k8s_node:
       name: "k8s-node"
       vb:
-        external_ip_base: 3
+        external_ip_base: 10
         box: "geerlingguy/debian10"
         resources:
           cpus: 2
