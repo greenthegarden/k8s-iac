@@ -13,8 +13,7 @@ configs:
     controller:
       name: "controller"
       vb:
-        external_network: "private_network"
-        external_ip_base: 100
+        external_ip_base: 2
         box: "debian/buster64"
         resources:
           cpus: 1
@@ -22,16 +21,14 @@ configs:
     k8s_master:
       name: "k8s-master"
       vb:
-        external_network: "private_network"
-        external_ip_base: 2
-        box: "geerlingguy/debian10"
+        external_ip_base: 3
+        box: "debian/buster64"
         resources:
           cpus: 2
           memory: 2048
     k8s_node:
       name: "k8s-node"
       vb:
-        external_network: "private_network"
         external_ip_base: 3
         box: "geerlingguy/debian10"
         resources:

@@ -21,12 +21,10 @@ end
 # Get settings from configuration file to enable easier access
 config_use = config_file['configs']['use']
 controller_settings = config_file['configs'][config_file['configs']['use']]['controller']
-k8s_master_settings = config_file['configs'][config_file['configs']['use']]['k8s_master']
 vb_settings = config_file['configs'][config_file['configs']['use']]['vb']
 
 puts "Using configurations for #{config_use}"
-puts "k8s_master settings: #{k8s_master_settings}"
-puts "controller settings: #{controller_settings}"
+puts "controller_settings: #{controller_settings}"
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
@@ -34,10 +32,11 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   # For details see https://www.vagrantup.com/docs/providers/basic_usage.html#default-provider
   config.vm.provider "virtualbox"
 
-  # Set generic vm specific attributes
-  config.ssh.insert_key = false
-  config.vm.synced_folder '.', '/vagrant', disabled: true
-
+  # use local ssh key to connect to remote vagrant box
+  # if not Vagrant::Util::Platform.windows? then
+  #   config.ssh.private_key_path = './ssh_keys/id_rsa'
+  # end
+  
   # Set virtualbox provider specific attributes
   config.vm.provider :virtualbox do |v|
     v.check_guest_additions = false
@@ -46,60 +45,28 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     v.linked_clone = true
   end
 
-  # Create k8s master
-  config.vm.define "k8s_master" do |subconfig|
-
-    subconfig.vm.box = k8s_master_settings['vb']['box']
-    subconfig.vm.hostname = k8s_master_settings['name']
-    subconfig.vm.network :private_network, ip: [ vb_settings['ip_range'], Integer(controller_settings['vb']['external_ip_base']) ].join('.')
-
-    # Set node specific VirtualBox configuration/overrides
-    subconfig.vm.provider "virtualbox" do |vb, override|
-      vb.cpus = k8s_master_settings['vb']['resources']['cpus']
-      vb.memory = k8s_master_settings['vb']['resources']['memory']
-      vb.name = k8s_master_settings['name']
-      # vb.customize ["modifyvm", :id, "--ioapic", "on"]
-      # Enable NAT hosts DNS resolver
-      # vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
-      # vb.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
-    end
-
-    # Configure ssh access on VM
-    public_key = File.read("ssh_keys/id_rsa.pub")
-    subconfig.vm.provision :shell, :inline =>"
-      echo 'Copying ansible-vm public SSH Keys to the VM'
-      mkdir -p /home/vagrant/.ssh
-      chmod 700 /home/vagrant/.ssh
-      echo '#{public_key}' >> /home/vagrant/.ssh/authorized_keys
-      chmod -R 600 /home/vagrant/.ssh/authorized_keys
-      echo 'Host *' >> /home/vagrant/.ssh/config
-      echo 'StrictHostKeyChecking no' >> /home/vagrant/.ssh/config
-      echo 'UserKnownHostsFile /dev/null' >> /home/vagrant/.ssh/config
-      chmod -R 600 /home/vagrant/.ssh/config
-      ", privileged: false
-
-    subconfig.vm.post_up_message = "k8s master spun up!"
-  
-  end
-
   # Create a machine to run Ansible
 
   config.vm.define "controller", primary: true do |subconfig|
 
-    subconfig.vm.box = controller_settings['vb']['box']
+    # Specify the hostname of the machine
     subconfig.vm.hostname = controller_settings['name']
-    subconfig.vm.network :private_network, ip: [ vb_settings['ip_range'], Integer(controller_settings['vb']['external_ip_base']) ].join('.')
 
     # Sync ansible folder to remote
     subconfig.vm.synced_folder "./ansible", "/vagrant/ansible", type: "rsync",
       rsync__exclude: [".git/"],
       rsync__args: ["--verbose", "--rsync-path='sudo rsync'", "--archive", "--delete", "-z"]
-      
+  
+    subconfig.vm.box = controller_settings['vb']['box']
+
+    subconfig.vm.network :private_network, ip: [ vb_settings['ip_range'], 2 ].join('.')
+    
     # Set node specific VirtualBox configuration/overrides
     subconfig.vm.provider "virtualbox" do |vb|
+      vb.name = controller_settings['name']
       vb.cpus = controller_settings['vb']['resources']['cpus']
       vb.memory = controller_settings['vb']['resources']['memory']
-      vb.name = controller_settings['name']
+      vb.customize ['modifyvm', :id, '--audio', 'none']
       # vb.customize ["modifyvm", :id, "--ioapic", "on"]
       # Enable NAT hosts DNS resolver
       # vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
